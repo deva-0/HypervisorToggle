@@ -1,0 +1,83 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore HypervisorToggle.csproj
+
+    - name: Build Release
+      run: dotnet build HypervisorToggle.csproj -c Release --no-restore
+
+    - name: Publish Standalone Executable
+      run: dotnet publish HypervisorToggle.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+
+    - name: Create distribution package
+      run: |
+        mkdir dist
+        copy bin\Release\net8.0-windows\win-x64\publish\HypervisorToggle.exe dist\
+        copy README.md dist\
+        copy QUICKSTART.md dist\
+        copy TROUBLESHOOTING.md dist\
+        copy *.bat dist\
+      shell: cmd
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: HypervisorToggle-win-x64
+        path: dist/
+
+    - name: Create ZIP for release
+      if: startsWith(github.ref, 'refs/tags/')
+      run: |
+        cd dist
+        7z a ../HypervisorToggle-${{ github.ref_name }}.zip *
+      shell: cmd
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: HypervisorToggle-${{ github.ref_name }}.zip
+        body: |
+          ## Hypervisor Mode Toggle
+          
+          Toggle between Hyper-V and VMware Workstation modes with full feature disabling.
+          
+          ### Download
+          - Download `HypervisorToggle-${{ github.ref_name }}.zip`
+          - Extract all files
+          - Right-click `disable-hyperv-manual.bat` → Run as administrator
+          - Restart your computer
+          
+          ### What's New
+          - Complete Hyper-V feature disabling
+          - Memory Integrity (Core Isolation) handling
+          - Full diagnostics tool
+          - Improved VMware compatibility
+          
+          See QUICKSTART.md for usage instructions.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
