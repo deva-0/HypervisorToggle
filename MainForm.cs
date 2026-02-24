@@ -3,9 +3,20 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Linq;
+using System.IO;
+using System.Text.Json;
 
 namespace HypervisorToggle
 {
+    public class HypervisorState
+    {
+        public int HvciEnabled { get; set; } = -1;
+        public int WindowsHelloVbsEnabled { get; set; } = -1;
+        public int VbsEnabled { get; set; } = -1;
+        public int CredentialGuardEnabled { get; set; } = -1;
+        public bool LsaIsoWasPresent { get; set; } = false;
+    }
+
     public class MainForm : Form
     {
         private Button btnEnableHyperV;
@@ -16,6 +27,9 @@ namespace HypervisorToggle
         private Label lblStatus;
         private Label lblInfo;
         private TextBox txtOutput;
+
+        private static string StateFilePath =>
+            Path.Combine(AppContext.BaseDirectory, "hypervisor-state.json");
 
         public MainForm()
         {
@@ -510,6 +524,123 @@ namespace HypervisorToggle
             {
                 txtOutput.AppendText($"  ✗ {friendlyName}: {ex.Message}\r\n");
             }
+        }
+
+        private int ReadRegistryDword(string keyPath, string valueName)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "reg.exe",
+                    Arguments = $"query \"{keyPath}\" /v {valueName}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using (Process process = Process.Start(psi))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    if (process.ExitCode != 0)
+                        return -1;
+
+                    // Output format: "    ValueName    REG_DWORD    0x1"
+                    foreach (string line in output.Split('\n'))
+                    {
+                        string trimmed = line.Trim();
+                        if (trimmed.StartsWith(valueName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string[] parts = trimmed.Split(new char[]{' ', '\t'}, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length >= 3)
+                            {
+                                string hex = parts[parts.Length - 1].Replace("0x", "").Replace("0X", "");
+                                if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int val))
+                                    return val;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return -1;
+        }
+
+        private void SaveState()
+        {
+            try
+            {
+                var state = new HypervisorState
+                {
+                    HvciEnabled = ReadRegistryDword(
+                        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity",
+                        "Enabled"),
+                    WindowsHelloVbsEnabled = ReadRegistryDword(
+                        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\WindowsHello",
+                        "Enabled"),
+                    VbsEnabled = ReadRegistryDword(
+                        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard",
+                        "EnableVirtualizationBasedSecurity"),
+                    CredentialGuardEnabled = ReadRegistryDword(
+                        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa",
+                        "LsaCfgFlags"),
+                    LsaIsoWasPresent = LsaIsoEntryExists()
+                };
+
+                string json = JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(StateFilePath, json);
+                txtOutput.AppendText($"  ✓ Current state saved to hypervisor-state.json\r\n");
+            }
+            catch (Exception ex)
+            {
+                txtOutput.AppendText($"  ⚠ Could not save state: {ex.Message}\r\n");
+            }
+        }
+
+        private HypervisorState LoadState()
+        {
+            try
+            {
+                if (File.Exists(StateFilePath))
+                {
+                    string json = File.ReadAllText(StateFilePath);
+                    return JsonSerializer.Deserialize<HypervisorState>(json) ?? new HypervisorState();
+                }
+            }
+            catch (Exception ex)
+            {
+                txtOutput.AppendText($"  ⚠ Could not load state file: {ex.Message}\r\n");
+            }
+            return null; // null means "no saved state — don't touch security settings"
+        }
+
+        private bool LsaIsoEntryExists()
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "bcdedit",
+                    Arguments = "/enum {0cb3b571-2f2e-4343-a879-d86a476d7215}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    Verb = "runas"
+                };
+
+                using (Process process = Process.Start(psi))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    return process.ExitCode == 0 && output.Contains("DISABLE-LSA-ISO");
+                }
+            }
+            catch { }
+            return false;
         }
 
         private void BtnFullDiagnostics_Click(object sender, EventArgs e)
