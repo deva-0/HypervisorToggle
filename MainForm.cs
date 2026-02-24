@@ -636,6 +636,7 @@ namespace HypervisorToggle
                 using (Process process = Process.Start(psi))
                 {
                     string output = process.StandardOutput.ReadToEnd();
+                    string _ = process.StandardError.ReadToEnd();  // drain to prevent deadlock
                     process.WaitForExit();
                     return process.ExitCode == 0;
                 }
