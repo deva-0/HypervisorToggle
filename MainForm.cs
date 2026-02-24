@@ -148,12 +148,15 @@ namespace HypervisorToggle
             var result = MessageBox.Show(
                 "This will COMPLETELY disable Hyper-V for VMware compatibility:\n\n" +
                 "✓ Set hypervisorlaunchtype to OFF\n" +
-                "✓ Disable Hyper-V Windows Feature\n" +
+                "✓ Disable all Hyper-V Windows Features\n" +
                 "✓ Disable Virtual Machine Platform\n" +
                 "✓ Disable Windows Hypervisor Platform\n" +
-                "✓ Disable Windows Sandbox\n" +
-                "✓ Disable Containers\n\n" +
-                "This ensures VMware Workstation will work with VT-x/AMD-V.\n\n" +
+                "✓ Disable Containers & Windows Sandbox\n" +
+                "✓ Disable Memory Integrity (Core Isolation)\n" +
+                "✓ Disable Device Guard / Credential Guard\n" +
+                "✓ Disable LSA Isolation (Windows 11 24H2 fix)\n\n" +
+                "This ensures VMware Workstation will work with VT-x/AMD-V,\n" +
+                "including nested virtualization (e.g., Proxmox VMs).\n\n" +
                 "Continue?",
                 "Confirm - Full Hyper-V Disable",
                 MessageBoxButtons.YesNo,
@@ -161,28 +164,41 @@ namespace HypervisorToggle
 
             if (result == DialogResult.Yes)
             {
+                txtOutput.Clear();
                 txtOutput.AppendText("=== DISABLING ALL HYPER-V FEATURES ===\r\n\r\n");
-                
+
                 // Step 1: Disable hypervisor launch
+                txtOutput.AppendText("[Step 1/5] Setting hypervisor launch type to OFF...\r\n");
                 ExecuteBcdEdit("off", "Hyper-V Hypervisor Disabled");
-                
+
                 // Step 2: Disable all Hyper-V Windows features
+                txtOutput.AppendText("[Step 2/5] Disabling Windows Features...\r\n");
                 DisableWindowsFeatures();
-                
+
                 // Step 3: Disable Memory Integrity (Core Isolation)
+                txtOutput.AppendText("[Step 3/5] Disabling Memory Integrity...\r\n");
                 DisableMemoryIntegrity();
-                
-                txtOutput.AppendText("\r\n=== COMPLETE ===\r\n");
+
+                // Step 4: Disable Device Guard / Credential Guard
+                txtOutput.AppendText("[Step 4/5] Disabling Device Guard / Credential Guard...\r\n");
+                DisableDeviceGuard();
+
+                // Step 5: Disable LSA Isolation (Windows 11 24H2 fix)
+                txtOutput.AppendText("[Step 5/5] Disabling LSA Isolation (24H2 fix)...\r\n");
+                DisableLsaIso();
+
+                txtOutput.AppendText("=== COMPLETE ===\r\n");
                 txtOutput.AppendText("*** RESTART YOUR COMPUTER NOW FOR CHANGES TO TAKE EFFECT ***\r\n\r\n");
-                
+
                 MessageBox.Show(
                     "All Hyper-V features have been disabled!\n\n" +
                     "IMPORTANT: You MUST restart your computer now.\n\n" +
-                    "After restart, VMware should work with hardware virtualization.",
+                    "After restart, VMware should work with hardware virtualization,\n" +
+                    "including nested virtualization for Proxmox VMs.",
                     "Success - Restart Required",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
-                
+
                 CheckCurrentStatus();
             }
         }
@@ -375,14 +391,102 @@ namespace HypervisorToggle
 
         private void DisableMemoryIntegrity()
         {
-            txtOutput.AppendText("Checking Memory Integrity (Core Isolation)...\r\n");
-            
+            txtOutput.AppendText("Disabling Memory Integrity (Core Isolation)...\r\n");
+
+            try
+            {
+                // Disable Memory Integrity (HVCI)
+                SetRegistryValue(
+                    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity",
+                    "Enabled", "0", "Memory Integrity (HVCI)");
+
+                // Disable Windows Hello VBS scenario (Windows 11 24H2)
+                SetRegistryValue(
+                    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\WindowsHello",
+                    "Enabled", "0", "Windows Hello VBS (24H2)");
+            }
+            catch (Exception ex)
+            {
+                txtOutput.AppendText($"  ⚠ Could not disable Memory Integrity: {ex.Message}\r\n");
+            }
+
+            txtOutput.AppendText("\r\n");
+        }
+
+        private void DisableDeviceGuard()
+        {
+            txtOutput.AppendText("Disabling Device Guard / Credential Guard...\r\n");
+
+            try
+            {
+                // Disable Virtualization Based Security
+                SetRegistryValue(
+                    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard",
+                    "EnableVirtualizationBasedSecurity", "0", "Virtualization Based Security");
+
+                // Disable Credential Guard
+                SetRegistryValue(
+                    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa",
+                    "LsaCfgFlags", "0", "Credential Guard");
+            }
+            catch (Exception ex)
+            {
+                txtOutput.AppendText($"  ⚠ Could not disable Device Guard: {ex.Message}\r\n");
+            }
+
+            txtOutput.AppendText("\r\n");
+        }
+
+        private void DisableLsaIso()
+        {
+            txtOutput.AppendText("Disabling LSA Isolation (Windows 11 24H2 fix)...\r\n");
+
             try
             {
                 ProcessStartInfo psi = new ProcessStartInfo
                 {
-                    FileName = "powershell.exe",
-                    Arguments = "-Command \"Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' -Name Enabled -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Enabled\"",
+                    FileName = "bcdedit",
+                    Arguments = "/set {0cb3b571-2f2e-4343-a879-d86a476d7215} loadoptions DISABLE-LSA-ISO",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    Verb = "runas"
+                };
+
+                using (Process process = Process.Start(psi))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+
+                    if (process.ExitCode == 0)
+                    {
+                        txtOutput.AppendText("  ✓ LSA Isolation disabled via BCD\r\n");
+                    }
+                    else
+                    {
+                        // This is expected to fail if the entry doesn't exist (non-24H2 systems)
+                        txtOutput.AppendText("  - LSA ISO entry not present (normal for non-24H2 systems)\r\n");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                txtOutput.AppendText($"  ⚠ Could not configure LSA ISO: {ex.Message}\r\n");
+            }
+
+            txtOutput.AppendText("\r\n");
+        }
+
+        private void SetRegistryValue(string keyPath, string valueName, string value, string friendlyName)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "reg.exe",
+                    Arguments = $"add \"{keyPath}\" /v {valueName} /t REG_DWORD /d {value} /f",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -391,45 +495,21 @@ namespace HypervisorToggle
 
                 using (Process process = Process.Start(psi))
                 {
-                    string output = process.StandardOutput.ReadToEnd().Trim();
                     process.WaitForExit();
-
-                    if (output == "1")
+                    if (process.ExitCode == 0)
                     {
-                        txtOutput.AppendText("  Memory Integrity is ENABLED - attempting to disable...\r\n");
-                        
-                        // Disable via registry
-                        ProcessStartInfo psiDisable = new ProcessStartInfo
-                        {
-                            FileName = "reg.exe",
-                            Arguments = "add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity\" /v Enabled /t REG_DWORD /d 0 /f",
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        };
-
-                        using (Process procDisable = Process.Start(psiDisable))
-                        {
-                            procDisable.WaitForExit();
-                            if (procDisable.ExitCode == 0)
-                            {
-                                txtOutput.AppendText("  ✓ Memory Integrity disabled in registry\r\n");
-                            }
-                        }
+                        txtOutput.AppendText($"  ✓ {friendlyName} disabled\r\n");
                     }
                     else
                     {
-                        txtOutput.AppendText("  Memory Integrity is already disabled or not configured\r\n");
+                        txtOutput.AppendText($"  ⚠ {friendlyName}: could not set (may already be disabled)\r\n");
                     }
                 }
             }
             catch (Exception ex)
             {
-                txtOutput.AppendText($"  ⚠ Could not check Memory Integrity: {ex.Message}\r\n");
+                txtOutput.AppendText($"  ✗ {friendlyName}: {ex.Message}\r\n");
             }
-            
-            txtOutput.AppendText("\r\n");
         }
 
         private void BtnFullDiagnostics_Click(object sender, EventArgs e)
@@ -445,19 +525,38 @@ namespace HypervisorToggle
             txtOutput.AppendText("\r\n--- Hyper-V Related Features ---\r\n");
             RunCommand("dism.exe", "/Online /Get-Features /Format:Table | findstr /i \"Hyper-V Virtual Container\"", "Checking installed features");
 
-            // Check Memory Integrity
-            txtOutput.AppendText("\r\n--- Memory Integrity (Core Isolation) ---\r\n");
+            // Check Memory Integrity (HVCI)
+            txtOutput.AppendText("\r\n--- Memory Integrity (Core Isolation / HVCI) ---\r\n");
             RunCommand("powershell.exe", "-Command \"Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity' -Name Enabled -ErrorAction SilentlyContinue\"", "Checking Memory Integrity");
 
-            // Check Device Guard
-            txtOutput.AppendText("\r\n--- Device Guard / Credential Guard ---\r\n");
-            RunCommand("powershell.exe", "-Command \"Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\\Microsoft\\Windows\\DeviceGuard\"", "Checking Device Guard");
+            // Check Windows Hello VBS (24H2)
+            txtOutput.AppendText("\r\n--- Windows Hello VBS (24H2) ---\r\n");
+            RunCommand("powershell.exe", "-Command \"Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\WindowsHello' -Name Enabled -ErrorAction SilentlyContinue\"", "Checking Windows Hello VBS");
+
+            // Check Device Guard / VBS
+            txtOutput.AppendText("\r\n--- Device Guard / VBS ---\r\n");
+            RunCommand("powershell.exe", "-Command \"Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard' -Name EnableVirtualizationBasedSecurity -ErrorAction SilentlyContinue\"", "Checking VBS");
+
+            // Check Credential Guard
+            txtOutput.AppendText("\r\n--- Credential Guard (LSA) ---\r\n");
+            RunCommand("powershell.exe", "-Command \"Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name LsaCfgFlags -ErrorAction SilentlyContinue\"", "Checking Credential Guard");
+
+            // Check Device Guard CIM instance
+            txtOutput.AppendText("\r\n--- Device Guard Status (CIM) ---\r\n");
+            RunCommand("powershell.exe", "-Command \"Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\\Microsoft\\Windows\\DeviceGuard | Select-Object -Property VirtualizationBasedSecurityStatus, SecurityServicesRunning\"", "Checking Device Guard CIM");
 
             // Check CPU Virtualization
             txtOutput.AppendText("\r\n--- CPU Virtualization Support ---\r\n");
-            RunCommand("systeminfo", "", "Checking system info for virtualization");
+            RunCommand("systeminfo", "| findstr /i \"Hyper-V\"", "Checking virtualization support");
 
             txtOutput.AppendText("\r\n=== DIAGNOSTICS COMPLETE ===\r\n");
+            txtOutput.AppendText("\r\nExpected values for VMware mode:\r\n");
+            txtOutput.AppendText("  • hypervisorlaunchtype: Off\r\n");
+            txtOutput.AppendText("  • Memory Integrity (Enabled): 0 or not present\r\n");
+            txtOutput.AppendText("  • Windows Hello VBS (Enabled): 0 or not present\r\n");
+            txtOutput.AppendText("  • EnableVirtualizationBasedSecurity: 0 or not present\r\n");
+            txtOutput.AppendText("  • LsaCfgFlags: 0 or not present\r\n");
+            txtOutput.AppendText("  • VirtualizationBasedSecurityStatus: 0 (Off)\r\n");
         }
 
         private void RunCommand(string fileName, string arguments, string description)

@@ -2,13 +2,17 @@
 
 A comprehensive GUI application to toggle between Hyper-V and VMware Workstation modes on Windows, with full feature disabling to ensure VMware compatibility.
 
-## ⚠️ NEW: Enhanced VMware Compatibility
+## ⚠️ NEW: Windows 11 24H2 Support
 
-This version completely disables ALL Hyper-V features to ensure VMware Workstation can use hardware virtualization (VT-x/AMD-V):
+This version completely disables ALL Hyper-V and VBS features to ensure VMware Workstation can use hardware virtualization (VT-x/AMD-V), including **nested virtualization** (e.g., running Proxmox as a VM, then VMs inside Proxmox):
 
-- ✓ Disables hypervisorlaunchtype  
-- ✓ Disables ALL Hyper-V Windows features
-- ✓ Disables Memory Integrity (Core Isolation)
+- ✓ Disables hypervisorlaunchtype
+- ✓ Disables ALL Hyper-V Windows features (11 features)
+- ✓ Disables Memory Integrity (Core Isolation / HVCI)
+- ✓ Disables Device Guard (Virtualization Based Security)
+- ✓ Disables Credential Guard (LSA protection)
+- ✓ Disables Windows Hello VBS (Windows 11 24H2)
+- ✓ Disables LSA Isolation (Windows 11 24H2 fix)
 - ✓ Full diagnostics tool
 - ✓ Manual batch scripts included
 
@@ -86,9 +90,11 @@ See **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** for detailed help if VMware sti
 
 Common issues:
 - Memory Integrity (Core Isolation) still enabled
+- Device Guard / VBS still enabled (especially on Windows 11 24H2)
 - Windows features not fully disabled
 - BIOS virtualization disabled
 - System not restarted after changes
+- **Windows 11 24H2**: New VBS protections require additional registry changes
 
 **Quick fix:** Run the GUI app → Click "Enable VMware Mode" → Restart computer
 
@@ -105,14 +111,19 @@ Common issues:
 ### VMware Mode (hypervisorlaunchtype = off + features disabled)
 **The app now disables:**
 - Hyper-V hypervisor launch type
-- ALL Hyper-V Windows features
+- ALL Hyper-V Windows features (11 features total)
 - Virtual Machine Platform
-- Windows Hypervisor Platform  
-- Memory Integrity (Core Isolation)
+- Windows Hypervisor Platform
+- Memory Integrity (Core Isolation / HVCI)
+- Device Guard (Virtualization Based Security)
+- Credential Guard (LSA protection)
+- Windows Hello VBS (Windows 11 24H2)
+- LSA Isolation (Windows 11 24H2)
 - Containers and Sandbox features
 
 **Result:**
 - ✓ VMware Workstation works with full hardware virtualization
+- ✓ **Nested virtualization works** (e.g., Proxmox VM → VMs inside)
 - ✓ VirtualBox works normally
 - ✗ WSL2 will not work (WSL1 still works)
 - ✗ Windows Sandbox will not work

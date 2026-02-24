@@ -2,13 +2,19 @@
 
 If VMware still shows "VT-x is not available" or "VT-x/AMD-V hardware acceleration is not available" after disabling Hyper-V, follow this guide.
 
+**Updated for Windows 11 24H2** - includes fixes for nested virtualization (e.g., running Proxmox as a VM).
+
 ## Quick Fix Checklist
 
 ### 1. Use the Enhanced App
 Run the updated app and click **"Enable VMware Mode"** - it now:
 - ✓ Disables hypervisorlaunchtype
-- ✓ Disables ALL Hyper-V Windows features
-- ✓ Disables Memory Integrity (Core Isolation)
+- ✓ Disables ALL Hyper-V Windows features (11 features)
+- ✓ Disables Memory Integrity (Core Isolation / HVCI)
+- ✓ Disables Device Guard (Virtualization Based Security)
+- ✓ Disables Credential Guard (LSA protection)
+- ✓ Disables Windows Hello VBS (Windows 11 24H2)
+- ✓ Disables LSA Isolation (Windows 11 24H2)
 - ✓ Provides full diagnostics
 
 ### 2. RESTART YOUR COMPUTER
@@ -66,18 +72,33 @@ dism.exe /Online /Disable-Feature /FeatureName:VirtualMachinePlatform /NoRestart
 dism.exe /Online /Disable-Feature /FeatureName:Containers /NoRestart
 ```
 
-### 3. Disable Memory Integrity
+### 3. Disable Memory Integrity (HVCI)
 ```cmd
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f
 ```
 
-### 4. Disable Device Guard (if enabled)
+### 4. Disable Windows Hello VBS (Windows 11 24H2)
+```cmd
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\WindowsHello" /v Enabled /t REG_DWORD /d 0 /f
+```
+
+### 5. Disable Device Guard / VBS
 ```cmd
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f
+```
+
+### 6. Disable Credential Guard
+```cmd
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v LsaCfgFlags /t REG_DWORD /d 0 /f
 ```
 
-### 5. RESTART
+### 7. Disable LSA Isolation (Windows 11 24H2 fix)
+```cmd
+bcdedit /set {0cb3b571-2f2e-4343-a879-d86a476d7215} loadoptions DISABLE-LSA-ISO
+```
+Note: This may fail on non-24H2 systems - that's OK.
+
+### 8. RESTART
 ```cmd
 shutdown /r /t 0
 ```
@@ -147,9 +168,12 @@ When ANY of these are active, Windows takes exclusive control of VT-x/AMD-V, pre
 You must disable:
 1. ✓ Hypervisor launch type
 2. ✓ ALL Windows features that use Hyper-V
-3. ✓ Memory Integrity
-4. ✓ Device/Credential Guard (if enabled)
-5. ✓ RESTART the computer
+3. ✓ Memory Integrity (HVCI)
+4. ✓ Windows Hello VBS (Windows 11 24H2)
+5. ✓ Device Guard / VBS
+6. ✓ Credential Guard
+7. ✓ LSA Isolation (Windows 11 24H2)
+8. ✓ RESTART the computer
 
 The enhanced app automates all of this!
 
@@ -174,6 +198,23 @@ The enhanced app automates all of this!
 |---------|------------------|--------------|
 | hypervisorlaunchtype | OFF | `bcdedit /enum` |
 | Hyper-V Features | DISABLED | Windows Features dialog |
-| Memory Integrity | OFF | Windows Security → Device Security |
+| Memory Integrity (HVCI) | OFF | Windows Security → Device Security → Core Isolation |
+| Windows Hello VBS (24H2) | OFF | Registry check (see above) |
+| Device Guard / VBS | OFF | Registry check (see above) |
+| Credential Guard | OFF | Registry check (see above) |
 | VT-x in BIOS | ENABLED | BIOS/UEFI settings |
 | VMware VT-x option | ENABLED | VM Settings → Processors |
+
+## Windows 11 24H2 Specific Issues
+
+Windows 11 24H2 introduced stricter VBS (Virtualization Based Security) that can persist even after disabling traditional Hyper-V settings. If you've disabled everything above and VMware still doesn't work:
+
+1. **Check for UEFI-locked VBS**: Some systems have VBS enabled at the firmware level
+   - Check BIOS/UEFI for "Virtualization Based Security", "Device Guard", or similar settings
+   - Some OEM systems enforce this and cannot be easily disabled
+
+2. **Check for MDM/Intune policies**: Enterprise-managed devices may have policies that re-enable VBS
+
+3. **Try Secure Boot toggle**: As a last resort, temporarily disable Secure Boot in BIOS, boot Windows, then re-enable Secure Boot. This can clear the UEFI variable that locks VBS.
+
+4. **Nested Virtualization for Proxmox**: If you're running Proxmox as a VM and getting "vcpu-0 breakpoint error", ensure ALL the settings above are disabled, especially Memory Integrity.

@@ -1,9 +1,11 @@
 # QUICK START - Fix VMware "VT-x not available" Error
 
+**Updated for Windows 11 24H2** - Also fixes nested virtualization issues (e.g., Proxmox VM "vcpu-0 breakpoint error")
+
 ## The Problem
 VMware Workstation shows: "VT-x/AMD-V hardware acceleration is not available on your system"
 
-This happens because Windows Hyper-V features are taking exclusive control of your CPU's virtualization capabilities.
+This happens because Windows Hyper-V and VBS (Virtualization Based Security) features are taking exclusive control of your CPU's virtualization capabilities.
 
 ## The Solution (3 Steps)
 
@@ -62,11 +64,15 @@ This will show exactly what's preventing VMware from working.
 
 ## What Gets Disabled
 
-To make VMware work with hardware virtualization, these are disabled:
+To make VMware work with hardware virtualization (including nested virtualization), these are disabled:
 - ✗ Hyper-V hypervisor
-- ✗ All Hyper-V Windows features
+- ✗ All Hyper-V Windows features (11 features)
 - ✗ Virtual Machine Platform
-- ✗ Memory Integrity (Core Isolation)
+- ✗ Memory Integrity (Core Isolation / HVCI)
+- ✗ Device Guard (Virtualization Based Security)
+- ✗ Credential Guard (LSA protection)
+- ✗ Windows Hello VBS (Windows 11 24H2)
+- ✗ LSA Isolation (Windows 11 24H2)
 - ✗ WSL2 (WSL1 still works)
 - ✗ Windows Sandbox
 - ✗ Hyper-V VMs
@@ -76,9 +82,25 @@ To make VMware work with hardware virtualization, these are disabled:
 Run these in Command Prompt (as Administrator):
 
 ```cmd
+:: Disable hypervisor
 bcdedit /set hypervisorlaunchtype off
+
+:: Disable Hyper-V features
 dism /Online /Disable-Feature /FeatureName:Microsoft-Hyper-V-All /NoRestart
 dism /Online /Disable-Feature /FeatureName:VirtualMachinePlatform /NoRestart
+
+:: Disable Memory Integrity
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f
+
+:: Disable VBS (Windows 11 24H2)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\WindowsHello" /v Enabled /t REG_DWORD /d 0 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v LsaCfgFlags /t REG_DWORD /d 0 /f
+
+:: Disable LSA Isolation (Windows 11 24H2 - may fail on older Windows, that's OK)
+bcdedit /set {0cb3b571-2f2e-4343-a879-d86a476d7215} loadoptions DISABLE-LSA-ISO
+
+:: Restart
 shutdown /r /t 0
 ```
 
