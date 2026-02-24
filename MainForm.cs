@@ -543,6 +543,7 @@ namespace HypervisorToggle
                 using (Process process = Process.Start(psi))
                 {
                     string output = process.StandardOutput.ReadToEnd();
+                    string _ = process.StandardError.ReadToEnd();  // drain to prevent deadlock
                     process.WaitForExit();
 
                     if (process.ExitCode != 0)
@@ -614,7 +615,7 @@ namespace HypervisorToggle
             {
                 txtOutput.AppendText($"  ⚠ Could not load state file: {ex.Message}\r\n");
             }
-            return null; // null means "no saved state — don't touch security settings"
+            return new HypervisorState(); // defaults (-1) mean "was not configured — leave unchanged"
         }
 
         private bool LsaIsoEntryExists()
@@ -636,7 +637,7 @@ namespace HypervisorToggle
                 {
                     string output = process.StandardOutput.ReadToEnd();
                     process.WaitForExit();
-                    return process.ExitCode == 0 && output.Contains("DISABLE-LSA-ISO");
+                    return process.ExitCode == 0;
                 }
             }
             catch { }
