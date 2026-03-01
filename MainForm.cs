@@ -308,12 +308,6 @@ namespace HypervisorToggle
                         txtOutput.AppendText($"{output}\r\n");
                         txtOutput.AppendText("*** RESTART REQUIRED FOR CHANGES TO TAKE EFFECT ***\r\n\r\n");
 
-                        MessageBox.Show(
-                            $"Successfully set to {modeName}!\n\nPlease restart your computer for the changes to take effect.",
-                            "Success",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information);
-
                         CheckCurrentStatus();
                     }
                     else
@@ -698,7 +692,8 @@ namespace HypervisorToggle
                     process.WaitForExit();
                     if (process.ExitCode == 0)
                     {
-                        txtOutput.AppendText($"  ✓ {friendlyName} disabled\r\n");
+                        string verb = value == "0" ? "disabled" : "restored/enabled";
+                        txtOutput.AppendText($"  ✓ {friendlyName} {verb}\r\n");
                     }
                     else
                     {
