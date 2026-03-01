@@ -101,12 +101,18 @@ Common issues:
 ## What Each Mode Does
 
 ### Hyper-V Mode (hypervisorlaunchtype = auto)
-- Hyper-V is enabled
-- Windows Subsystem for Linux 2 (WSL2) works
-- Windows Sandbox works
-- Docker Desktop (Hyper-V backend) works
-- VMware Workstation **cannot** use hardware virtualization
-- VirtualBox may have compatibility issues
+The app now **fully reverses** the VMware Mode operation:
+- Re-enables core Hyper-V Windows features
+- Restores Memory Integrity, Device Guard, and Credential Guard to their **exact pre-VMware-mode values** (using saved state from `hypervisor-state.json`)
+- Removes the LSA Isolation BCD entry added for 24H2
+
+**Result:**
+- ✓ Hyper-V VMs work
+- ✓ WSL2 works
+- ✓ Windows Sandbox works
+- ✓ Docker Desktop (Hyper-V backend) works
+- ✗ VMware Workstation **cannot** use hardware virtualization
+- ✗ Nested virtualization (Proxmox VMs) will not work
 
 ### VMware Mode (hypervisorlaunchtype = off + features disabled)
 **The app now disables:**

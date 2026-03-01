@@ -104,6 +104,20 @@ bcdedit /set {0cb3b571-2f2e-4343-a879-d86a476d7215} loadoptions DISABLE-LSA-ISO
 shutdown /r /t 0
 ```
 
+## Switching Back to Hyper-V Mode
+
+To re-enable Hyper-V after switching to VMware mode:
+
+**GUI (state-aware — restores your exact previous settings):**
+1. Run `HypervisorToggle.exe` as Administrator
+2. Click "Enable Hyper-V Mode"
+3. Restart
+
+**Batch script (always re-enables security features):**
+1. Right-click `enable-hyperv-manual.bat`
+2. Select "Run as administrator"
+3. Press Y to restart
+
 ## Need More Help?
 
 - **Full troubleshooting**: Read `TROUBLESHOOTING.md`
