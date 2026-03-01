@@ -181,6 +181,11 @@ namespace HypervisorToggle
                 txtOutput.Clear();
                 txtOutput.AppendText("=== DISABLING ALL HYPER-V FEATURES ===\r\n\r\n");
 
+                // Save current state before disabling (for restore on Hyper-V re-enable)
+                txtOutput.AppendText("[Step 0/5] Saving current state for later restore...\r\n");
+                SaveState();
+                txtOutput.AppendText("\r\n");
+
                 // Step 1: Disable hypervisor launch
                 txtOutput.AppendText("[Step 1/5] Setting hypervisor launch type to OFF...\r\n");
                 ExecuteBcdEdit("off", "Hyper-V Hypervisor Disabled");
