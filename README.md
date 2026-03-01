@@ -84,6 +84,14 @@ Completely disables all Hyper-V features for VMware compatibility.
 Right-click → Run as administrator
 ```
 
+### `enable-hyperv-manual.bat`
+Re-enables Hyper-V and core Windows features after switching to VMware mode.
+Note: Always re-enables security features. For state-aware restore, use the GUI app.
+**Must run as Administrator!**
+```cmd
+Right-click → Run as administrator
+```
+
 ## Troubleshooting VMware "VT-x not available" Error
 
 See **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** for detailed help if VMware still shows VT-x errors after disabling Hyper-V.

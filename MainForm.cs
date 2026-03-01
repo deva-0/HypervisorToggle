@@ -163,6 +163,8 @@ namespace HypervisorToggle
 
                 // Load previously saved state
                 HypervisorState state = LoadState();
+                if (!File.Exists(StateFilePath))
+                    txtOutput.AppendText("  ⚠ No saved state found — security settings will not be restored\r\n\r\n");
 
                 // Step 1: Set hypervisor launch type to auto
                 txtOutput.AppendText("[Step 1/4] Setting hypervisor launch type to AUTO...\r\n");
@@ -291,8 +293,7 @@ namespace HypervisorToggle
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true,
-                    Verb = "runas"
+                    CreateNoWindow = true
                 };
 
                 using (Process process = Process.Start(psi))
@@ -307,8 +308,6 @@ namespace HypervisorToggle
                         txtOutput.AppendText($"Command: bcdedit /set hypervisorlaunchtype {launchType}\r\n");
                         txtOutput.AppendText($"{output}\r\n");
                         txtOutput.AppendText("*** RESTART REQUIRED FOR CHANGES TO TAKE EFFECT ***\r\n\r\n");
-
-                        CheckCurrentStatus();
                     }
                     else
                     {
@@ -560,8 +559,7 @@ namespace HypervisorToggle
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true,
-                    Verb = "runas"
+                    CreateNoWindow = true
                 };
 
                 using (Process process = Process.Start(psi))
@@ -644,8 +642,7 @@ namespace HypervisorToggle
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true,
-                    Verb = "runas"
+                    CreateNoWindow = true
                 };
 
                 using (Process process = Process.Start(psi))
@@ -660,7 +657,7 @@ namespace HypervisorToggle
                     }
                     else
                     {
-                        // This is expected to fail if the entry doesn't exist (non-24H2 systems)
+                        // bcdedit /set may fail if the BCD object exists but the value is not set
                         txtOutput.AppendText("  - LSA ISO entry not present (normal for non-24H2 systems)\r\n");
                     }
                 }
@@ -755,6 +752,12 @@ namespace HypervisorToggle
         {
             try
             {
+                if (File.Exists(StateFilePath))
+                {
+                    txtOutput.AppendText("  - State file already exists, prior state preserved\r\n");
+                    return;
+                }
+
                 var state = new HypervisorState
                 {
                     HvciEnabled = ReadRegistryDword(
@@ -810,8 +813,7 @@ namespace HypervisorToggle
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true,
-                    Verb = "runas"
+                    CreateNoWindow = true
                 };
 
                 using (Process process = Process.Start(psi))
@@ -819,7 +821,7 @@ namespace HypervisorToggle
                     string output = process.StandardOutput.ReadToEnd();
                     string _ = process.StandardError.ReadToEnd();  // drain to prevent deadlock
                     process.WaitForExit();
-                    return process.ExitCode == 0;
+                    return process.ExitCode == 0 && output.Contains("DISABLE-LSA-ISO");
                 }
             }
             catch { }
