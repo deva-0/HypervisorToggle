@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: windows-latest
     env:
-      VERSION: v1.0.${{ github.run_number }}
+      RELEASE_TAG: v1.0.${{ github.run_number }}
 
     steps:
     - name: Checkout code
@@ -54,23 +54,23 @@ jobs:
       if: github.event_name != 'pull_request'
       run: |
         cd dist
-        7z a ../HypervisorToggle-%VERSION%.zip *
+        7z a ../HypervisorToggle-%RELEASE_TAG%.zip *
       shell: cmd
 
     - name: Create Release
       if: github.event_name != 'pull_request'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ env.VERSION }}
-        name: Release ${{ env.VERSION }}
-        files: HypervisorToggle-${{ env.VERSION }}.zip
+        tag_name: ${{ env.RELEASE_TAG }}
+        name: Release ${{ env.RELEASE_TAG }}
+        files: HypervisorToggle-${{ env.RELEASE_TAG }}.zip
         body: |
-          ## Hypervisor Mode Toggle ${{ env.VERSION }}
+          ## Hypervisor Mode Toggle ${{ env.RELEASE_TAG }}
 
           Toggle between Hyper-V and VMware Workstation modes on Windows, with full support for Windows 11 24H2 and nested virtualization (e.g., Proxmox VMs).
 
           ### Download
-          - Download `HypervisorToggle-${{ env.VERSION }}.zip` and extract all files
+          - Download `HypervisorToggle-${{ env.RELEASE_TAG }}.zip` and extract all files
           - Run as Administrator:
             - **GUI:** `HypervisorToggle.exe` — full experience with state-aware restore
             - **Disable Hyper-V for VMware:** Right-click `disable-hyperv-manual.bat` → Run as administrator
