@@ -146,14 +146,53 @@ namespace HypervisorToggle
         private void BtnEnableHyperV_Click(object sender, EventArgs e)
         {
             var result = MessageBox.Show(
-                "This will enable Hyper-V mode on next boot.\nVMware nested virtualization will not work.\n\nContinue?",
-                "Confirm",
+                "This will re-enable Hyper-V mode:\n\n" +
+                "✓ Set hypervisorlaunchtype to AUTO\n" +
+                "✓ Re-enable core Hyper-V Windows Features\n" +
+                "✓ Restore security settings to pre-VMware-mode values\n\n" +
+                "VMware Workstation nested virtualization will NOT work after this.\n\n" +
+                "Continue?",
+                "Confirm - Enable Hyper-V Mode",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
 
             if (result == DialogResult.Yes)
             {
+                txtOutput.Clear();
+                txtOutput.AppendText("=== ENABLING HYPER-V MODE ===\r\n\r\n");
+
+                // Load previously saved state
+                HypervisorState state = LoadState();
+
+                // Step 1: Set hypervisor launch type to auto
+                txtOutput.AppendText("[Step 1/4] Setting hypervisor launch type to AUTO...\r\n");
                 ExecuteBcdEdit("auto", "Hyper-V Enabled");
+
+                // Step 2: Re-enable core Hyper-V Windows Features
+                txtOutput.AppendText("[Step 2/4] Re-enabling core Hyper-V Windows Features...\r\n");
+                EnableWindowsFeatures();
+
+                // Step 3: Restore security settings from saved state
+                txtOutput.AppendText("[Step 3/4] Restoring security settings...\r\n");
+                RestoreSecuritySettings(state);
+
+                // Step 4: Restore LSA Isolation state
+                txtOutput.AppendText("[Step 4/4] Restoring LSA Isolation state...\r\n");
+                RestoreLsaIso(state);
+
+                txtOutput.AppendText("=== COMPLETE ===\r\n");
+                txtOutput.AppendText("*** RESTART YOUR COMPUTER NOW FOR CHANGES TO TAKE EFFECT ***\r\n\r\n");
+
+                MessageBox.Show(
+                    "Hyper-V mode has been re-enabled!\n\n" +
+                    "IMPORTANT: You MUST restart your computer now.\n\n" +
+                    "After restart, Hyper-V, WSL2, and Windows Sandbox will work again.\n" +
+                    "VMware Workstation will need hardware virtualization disabled.",
+                    "Success - Restart Required",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+
+                CheckCurrentStatus();
             }
         }
 
@@ -405,6 +444,148 @@ namespace HypervisorToggle
                 }
             }
             
+            txtOutput.AppendText("\r\n");
+        }
+
+        private void EnableWindowsFeatures()
+        {
+            txtOutput.AppendText("Re-enabling core Hyper-V Windows Features...\r\n");
+
+            // Only core functional features — management tools are intentionally excluded
+            string[] featuresToEnable = new string[]
+            {
+                "Microsoft-Hyper-V-All",
+                "HypervisorPlatform",
+                "VirtualMachinePlatform"
+            };
+
+            foreach (string feature in featuresToEnable)
+            {
+                try
+                {
+                    txtOutput.AppendText($"  → Enabling {feature}...\r\n");
+
+                    ProcessStartInfo psi = new ProcessStartInfo
+                    {
+                        FileName = "dism.exe",
+                        Arguments = $"/Online /Enable-Feature /FeatureName:{feature} /All /NoRestart",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using (Process process = Process.Start(psi))
+                    {
+                        string output = process.StandardOutput.ReadToEnd();
+                        string _ = process.StandardError.ReadToEnd();
+                        process.WaitForExit();
+
+                        if (process.ExitCode == 0 || output.Contains("completed successfully"))
+                        {
+                            txtOutput.AppendText($"    ✓ Success\r\n");
+                        }
+                        else if (output.Contains("already enabled"))
+                        {
+                            txtOutput.AppendText($"    - Already enabled\r\n");
+                        }
+                        else
+                        {
+                            txtOutput.AppendText($"    ⚠ Warning: exit code {process.ExitCode}\r\n");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    txtOutput.AppendText($"    ✗ Error: {ex.Message}\r\n");
+                }
+            }
+
+            txtOutput.AppendText("\r\n");
+        }
+
+        private void RestoreSecuritySettings(HypervisorState state)
+        {
+            txtOutput.AppendText("Restoring security settings from saved state...\r\n");
+
+            RestoreRegistryValue(
+                "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity",
+                "Enabled", state.HvciEnabled, "Memory Integrity (HVCI)");
+
+            RestoreRegistryValue(
+                "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\WindowsHello",
+                "Enabled", state.WindowsHelloVbsEnabled, "Windows Hello VBS");
+
+            RestoreRegistryValue(
+                "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard",
+                "EnableVirtualizationBasedSecurity", state.VbsEnabled, "Virtualization Based Security");
+
+            RestoreRegistryValue(
+                "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa",
+                "LsaCfgFlags", state.CredentialGuardEnabled, "Credential Guard");
+
+            txtOutput.AppendText("\r\n");
+        }
+
+        private void RestoreRegistryValue(string keyPath, string valueName, int savedValue, string friendlyName)
+        {
+            if (savedValue == -1)
+            {
+                txtOutput.AppendText($"  - {friendlyName}: was not configured before, leaving as-is\r\n");
+                return;
+            }
+
+            if (savedValue == 0)
+            {
+                txtOutput.AppendText($"  - {friendlyName}: was already OFF before, leaving as-is\r\n");
+                return;
+            }
+
+            // savedValue is non-zero: restore it
+            SetRegistryValue(keyPath, valueName, savedValue.ToString(), friendlyName);
+        }
+
+        private void RestoreLsaIso(HypervisorState state)
+        {
+            txtOutput.AppendText("Restoring LSA Isolation state...\r\n");
+
+            if (state.LsaIsoWasPresent)
+            {
+                txtOutput.AppendText("  - LSA ISO was present before, leaving DISABLE-LSA-ISO entry\r\n\r\n");
+                return;
+            }
+
+            txtOutput.AppendText("  - LSA ISO was not present before, removing DISABLE-LSA-ISO entry\r\n");
+
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "bcdedit",
+                    Arguments = "/deletevalue {0cb3b571-2f2e-4343-a879-d86a476d7215} loadoptions",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    Verb = "runas"
+                };
+
+                using (Process process = Process.Start(psi))
+                {
+                    string _ = process.StandardOutput.ReadToEnd();
+                    string __ = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    if (process.ExitCode == 0)
+                        txtOutput.AppendText("  ✓ DISABLE-LSA-ISO removed\r\n");
+                    else
+                        txtOutput.AppendText("  - Entry not present (nothing to remove)\r\n");
+                }
+            }
+            catch (Exception ex)
+            {
+                txtOutput.AppendText($"  ⚠ Could not remove LSA ISO entry: {ex.Message}\r\n");
+            }
+
             txtOutput.AppendText("\r\n");
         }
 
