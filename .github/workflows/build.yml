@@ -3,15 +3,18 @@ name: Build and Release
 on:
   push:
     branches: [ "main", "master" ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      VERSION: v1.0.${{ github.run_number }}
 
     steps:
     - name: Checkout code
@@ -47,35 +50,49 @@ jobs:
         name: HypervisorToggle-win-x64
         path: dist/
 
-    - name: Create ZIP for release
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: Create ZIP
+      if: github.event_name != 'pull_request'
       run: |
         cd dist
-        7z a ../HypervisorToggle-${{ github.ref_name }}.zip *
+        7z a ../HypervisorToggle-%VERSION%.zip *
       shell: cmd
 
     - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      if: github.event_name != 'pull_request'
+      uses: softprops/action-gh-release@v2
       with:
-        files: HypervisorToggle-${{ github.ref_name }}.zip
+        tag_name: ${{ env.VERSION }}
+        name: Release ${{ env.VERSION }}
+        files: HypervisorToggle-${{ env.VERSION }}.zip
         body: |
-          ## Hypervisor Mode Toggle
-          
-          Toggle between Hyper-V and VMware Workstation modes with full feature disabling.
-          
+          ## Hypervisor Mode Toggle ${{ env.VERSION }}
+
+          Toggle between Hyper-V and VMware Workstation modes on Windows, with full support for Windows 11 24H2 and nested virtualization (e.g., Proxmox VMs).
+
           ### Download
-          - Download `HypervisorToggle-${{ github.ref_name }}.zip`
-          - Extract all files
-          - Right-click `disable-hyperv-manual.bat` → Run as administrator
-          - Restart your computer
-          
-          ### What's New
-          - Complete Hyper-V feature disabling
-          - Memory Integrity (Core Isolation) handling
-          - Full diagnostics tool
-          - Improved VMware compatibility
-          
+          - Download `HypervisorToggle-${{ env.VERSION }}.zip` and extract all files
+          - Run as Administrator:
+            - **GUI:** `HypervisorToggle.exe` — full experience with state-aware restore
+            - **Disable Hyper-V for VMware:** Right-click `disable-hyperv-manual.bat` → Run as administrator
+            - **Re-enable Hyper-V:** Right-click `enable-hyperv-manual.bat` → Run as administrator
+            - **Diagnose:** `check-status.bat`
+          - Restart your computer after any change
+
+          ### What's Included
+          - `HypervisorToggle.exe` — GUI app (saves state before disabling, restores exact values on re-enable)
+          - `disable-hyperv-manual.bat` — Disable all Hyper-V features for VMware
+          - `enable-hyperv-manual.bat` — Re-enable Hyper-V (reverse operation)
+          - `check-status.bat` — Diagnose current configuration
+          - `README.md`, `QUICKSTART.md`, `TROUBLESHOOTING.md`
+
+          ### Features
+          - Disables ALL Hyper-V features for full VMware compatibility
+          - Fixes nested virtualization (Proxmox VM vcpu-0 breakpoint error)
+          - Windows 11 24H2 support: Memory Integrity, VBS, Windows Hello VBS, LSA Isolation
+          - Full reverse operation: Enable Hyper-V Mode restores security settings to exact pre-disable values
+          - State saved to hypervisor-state.json so re-enable respects what was already off
+          - Full diagnostics tool included
+
           See QUICKSTART.md for usage instructions.
         draft: false
         prerelease: false
