@@ -1,157 +1,158 @@
-# Hypervisor Mode Toggle - Enhanced
+# HypervisorToggle
 
-A comprehensive GUI application to toggle between Hyper-V and VMware Workstation modes on Windows, with full feature disabling to ensure VMware compatibility.
+Windows utility to switch between Hyper-V mode and VMware Workstation mode by
+fully disabling or restoring the Windows hypervisor stack and associated
+security features.
 
-## ⚠️ NEW: Windows 11 24H2 Support
+Supports Windows 10, Windows 11, and Windows 11 24H2.  Handles nested
+virtualization scenarios (e.g. running Proxmox as a guest, then running VMs
+inside that guest).
 
-This version completely disables ALL Hyper-V and VBS features to ensure VMware Workstation can use hardware virtualization (VT-x/AMD-V), including **nested virtualization** (e.g., running Proxmox as a VM, then VMs inside Proxmox):
 
-- ✓ Disables hypervisorlaunchtype
-- ✓ Disables ALL Hyper-V Windows features (11 features)
-- ✓ Disables Memory Integrity (Core Isolation / HVCI)
-- ✓ Disables Device Guard (Virtualization Based Security)
-- ✓ Disables Credential Guard (LSA protection)
-- ✓ Disables Windows Hello VBS (Windows 11 24H2)
-- ✓ Disables LSA Isolation (Windows 11 24H2 fix)
-- ✓ Full diagnostics tool
-- ✓ Manual batch scripts included
+## Overview
 
-## Features
+Windows takes exclusive control of CPU virtualization extensions (VT-x/AMD-V)
+when the Hyper-V hypervisor is active.  This prevents VMware Workstation from
+using hardware-accelerated virtualization.  A simple `bcdedit` toggle is not
+sufficient -- the hypervisor persists through Windows Features, Virtualization
+Based Security (VBS), Memory Integrity (HVCI), and related subsystems.
 
-- **Enable Hyper-V Mode**: Sets `hypervisorlaunchtype` to `auto` (VMware nested virtualization disabled)
-- **Enable VMware Mode**: Sets `hypervisorlaunchtype` to `off` (Hyper-V disabled)
-- **Status Check**: Shows current hypervisor configuration
-- **Quick Restart**: Restart computer button to apply changes
-- **Administrator Privileges**: Automatically requests admin rights
+This tool disables the entire hypervisor stack when switching to VMware mode,
+and restores it to its exact prior state when switching back.
+
+
+## What Gets Disabled (VMware Mode)
+
+    hypervisorlaunchtype          set to off via bcdedit
+    Microsoft-Hyper-V-All         Windows Feature
+    HypervisorPlatform            Windows Feature
+    VirtualMachinePlatform        Windows Feature
+    Microsoft-Hyper-V-*           all sub-features (11 total)
+    Containers                    Windows Feature
+    Memory Integrity (HVCI)       registry: DeviceGuard\Scenarios\HECI
+    Windows Hello VBS             registry: DeviceGuard\Scenarios\WindowsHello
+    Virtualization Based Security registry: DeviceGuard\EnableVBS
+    Credential Guard              registry: Lsa\LsaCfgFlags
+    LSA Isolation                 BCD: DISABLE-LSA-ISO (24H2)
+
+State is saved to `hypervisor-state.json` before disabling.  Switching back to
+Hyper-V mode reads this file and restores each value to its original state.
+Settings that were already off before disabling are left off on restore.
+
 
 ## Requirements
 
-- Windows 10/11
-- .NET 8.0 SDK (or .NET 6.0+)
+- Windows 10 or Windows 11
 - Administrator privileges
+- .NET 8.0 runtime (or use the standalone executable from Releases)
 
-## Building the Application
 
-### Option 1: Using .NET CLI
+## Installation
 
-```bash
-cd HypervisorToggle
-dotnet build -c Release
-```
+Download the latest release ZIP from the Releases page.  Extract all files to
+a directory.  No installation required.
 
-The executable will be in: `bin/Release/net8.0-windows/HypervisorToggle.exe`
-
-### Option 2: Using Visual Studio
-
-1. Open the folder in Visual Studio 2022
-2. Build the solution (Ctrl+Shift+B)
-3. Run the application (F5)
-
-## Publishing a Standalone Executable
-
-To create a single-file executable that doesn't require .NET runtime:
-
-```bash
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-```
-
-The standalone executable will be in: `bin/Release/net8.0-windows/win-x64/publish/HypervisorToggle.exe`
 
 ## Usage
 
-1. **Run as Administrator**: The app will automatically request administrator privileges
-2. **Check Current Status**: The current hypervisor mode is displayed at the top
-3. **Switch Modes**:
-   - Click "Enable Hyper-V Mode" to enable Hyper-V (disables VMware nested virtualization)
-   - Click "Enable VMware Mode" to disable ALL Hyper-V features (enables VMware Workstation)
-4. **Run Diagnostics**: Click "Run Full Diagnostics" to see detailed system information
-5. **Restart**: Click "Restart Computer Now" to apply changes immediately, or restart manually later
+### GUI Application
 
-## Manual Scripts (No .NET Required)
+Run `HypervisorToggle.exe` as Administrator.
 
-If you can't or don't want to build the GUI app, use these batch scripts:
+    Enable VMware Mode      Disables the full hypervisor stack.  Saves current
+                            state to hypervisor-state.json before making any
+                            changes.  Requires restart.
 
-### `check-status.bat`
-Checks your current Hyper-V/VMware configuration. Run this first to diagnose issues.
-```cmd
-check-status.bat
-```
+    Enable Hyper-V Mode     Restores hypervisor stack to pre-disable state by
+                            reading hypervisor-state.json.  Re-enables core
+                            Hyper-V Windows Features.  Requires restart.
 
-### `disable-hyperv-manual.bat`
-Completely disables all Hyper-V features for VMware compatibility.
-**Must run as Administrator!**
-```cmd
-Right-click → Run as administrator
-```
+    Run Full Diagnostics    Reports current state of all relevant settings:
+                            BCD, Windows Features, registry keys, VBS status.
 
-### `enable-hyperv-manual.bat`
-Re-enables Hyper-V and core Windows features after switching to VMware mode.
-Note: Always re-enables security features. For state-aware restore, use the GUI app.
-**Must run as Administrator!**
-```cmd
-Right-click → Run as administrator
-```
+    Refresh Status          Reads current bcdedit configuration.
 
-## Troubleshooting VMware "VT-x not available" Error
+    Restart Computer Now    Initiates immediate system restart.
 
-See **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** for detailed help if VMware still shows VT-x errors after disabling Hyper-V.
+If no saved state file exists when switching back to Hyper-V mode, security
+settings (HVCI, VBS, Credential Guard) are left unchanged.
 
-Common issues:
-- Memory Integrity (Core Isolation) still enabled
-- Device Guard / VBS still enabled (especially on Windows 11 24H2)
-- Windows features not fully disabled
-- BIOS virtualization disabled
-- System not restarted after changes
-- **Windows 11 24H2**: New VBS protections require additional registry changes
 
-**Quick fix:** Run the GUI app → Click "Enable VMware Mode" → Restart computer
+### Batch Scripts
 
-## What Each Mode Does
+All scripts require Administrator privileges (right-click, Run as
+administrator).
 
-### Hyper-V Mode (hypervisorlaunchtype = auto)
-The app now **fully reverses** the VMware Mode operation:
-- Re-enables core Hyper-V Windows features
-- Restores Memory Integrity, Device Guard, and Credential Guard to their **exact pre-VMware-mode values** (using saved state from `hypervisor-state.json`)
-- Removes the LSA Isolation BCD entry added for 24H2
+    disable-hyperv-manual.bat   Disables the full hypervisor stack.
+                                Does not save state.
 
-**Result:**
-- ✓ Hyper-V VMs work
-- ✓ WSL2 works
-- ✓ Windows Sandbox works
-- ✓ Docker Desktop (Hyper-V backend) works
-- ✗ VMware Workstation **cannot** use hardware virtualization
-- ✗ Nested virtualization (Proxmox VMs) will not work
+    enable-hyperv-manual.bat    Re-enables core Hyper-V features and sets
+                                security settings back to enabled.  Always
+                                re-enables security features regardless of
+                                prior state -- use the GUI for state-aware
+                                restore.
 
-### VMware Mode (hypervisorlaunchtype = off + features disabled)
-**The app now disables:**
-- Hyper-V hypervisor launch type
-- ALL Hyper-V Windows features (11 features total)
-- Virtual Machine Platform
-- Windows Hypervisor Platform
-- Memory Integrity (Core Isolation / HVCI)
-- Device Guard (Virtualization Based Security)
-- Credential Guard (LSA protection)
-- Windows Hello VBS (Windows 11 24H2)
-- LSA Isolation (Windows 11 24H2)
-- Containers and Sandbox features
+    check-status.bat            Reports current configuration without making
+                                any changes.
 
-**Result:**
-- ✓ VMware Workstation works with full hardware virtualization
-- ✓ **Nested virtualization works** (e.g., Proxmox VM → VMs inside)
-- ✓ VirtualBox works normally
-- ✗ WSL2 will not work (WSL1 still works)
-- ✗ Windows Sandbox will not work
-- ✗ Docker Desktop (Hyper-V backend) will not work
-- ✗ Hyper-V VMs will not run
+
+## Building from Source
+
+    dotnet build -c Release
+
+Standalone single-file executable:
+
+    dotnet publish -c Release -r win-x64 --self-contained true \
+        -p:PublishSingleFile=true
+
+Output: `bin/Release/net8.0-windows/win-x64/publish/HypervisorToggle.exe`
+
 
 ## Troubleshooting
 
-**"Access Denied" Error**: Make sure you right-click the application and select "Run as Administrator"
+See TROUBLESHOOTING.md for detailed diagnostics.
 
-**Changes Don't Take Effect**: You must restart your computer for the hypervisor changes to apply
+Common causes of VMware VT-x errors after running this tool:
 
-**Can't Find Current Status**: The app reads the boot configuration. If it shows "Unable to determine", you may need to set the mode manually first.
+- System not restarted after changes
+- Memory Integrity re-enabled by Windows Update or OEM policy
+- BIOS/UEFI virtualization (VT-x / AMD-V) disabled in firmware
+- Device managed by Intune or Group Policy enforcing VBS
+
+On Windows 11 24H2, VBS may be locked at the firmware level on some OEM
+systems.  If disabling via registry has no effect after a restart, check
+BIOS/UEFI for a Device Guard or Memory Protection setting.
+
+
+## Modes
+
+### Hyper-V Mode
+
+hypervisorlaunchtype = auto, core Windows Features enabled, security features
+restored to saved state.
+
+    Hyper-V VMs             available
+    WSL2                    available
+    Windows Sandbox         available
+    Docker Desktop          available (Hyper-V backend)
+    VMware hardware virt.   not available
+    Nested virtualization   not available
+
+
+### VMware Mode
+
+hypervisorlaunchtype = off, Windows Features disabled, security features
+disabled.
+
+    VMware hardware virt.   available
+    Nested virtualization   available (e.g. Proxmox guest)
+    VirtualBox              available
+    Hyper-V VMs             not available
+    WSL2                    not available (WSL1 works)
+    Windows Sandbox         not available
+    Docker Desktop          not available (Hyper-V backend)
+
 
 ## License
 
-Free to use and modify.
+Public domain.  Use and modify freely.
